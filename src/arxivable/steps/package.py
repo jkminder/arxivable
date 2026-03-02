@@ -10,6 +10,7 @@ from arxivable.utils import format_size
 # Build artifacts to remove (keep .bbl!)
 # These are only removed from the project ROOT, not subdirectories
 ARTIFACT_EXTENSIONS = {
+    ".app",
     ".aux",
     ".log",
     ".out",
