@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "arxivable"
+version = "0.1.0"
+description = "Prepare Overleaf LaTeX papers for arXiv submission"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = ["click>=8.0"]
+
+[project.scripts]
+arxivable = "arxivable.cli:main"
