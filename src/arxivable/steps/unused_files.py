@@ -256,7 +256,9 @@ def find_referenced_files(workdir: str, verbose: bool = False) -> set[str]:
 def find_all_files(workdir: str) -> set[str]:
     """List all files in workdir as relative paths."""
     all_files: set[str] = set()
-    for root, _dirs, files in os.walk(workdir):
+    for root, dirs, files in os.walk(workdir):
+        # Skip .git directory (may exist as baseline for claude check diffing)
+        dirs[:] = [d for d in dirs if d != ".git"]
         for fname in files:
             fpath = os.path.join(root, fname)
             all_files.add(os.path.relpath(fpath, workdir))
