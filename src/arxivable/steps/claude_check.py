@@ -13,21 +13,23 @@ Do NOT suggest additional changes — only flag problems with what was done.
 
 Be concise. For each section, say "OK" if everything looks fine, or flag specific issues.
 
-Here is what was done:
+Here is a summary of what was done:
 {changes_description}
 
-Review each change category and flag any concerns:
+The working directory is: {workdir}
+
+Run `git diff` in that directory to see the exact changes that were made. Review the diff carefully and flag any concerns:
 1. Were any important files incorrectly removed?
 2. Were any todo commands incorrectly classified (real content removed as todos)?
-3. Are there borderline color-marker commands that need manual review?
-4. Are there any important compilation warnings?
+3. Did comment stripping accidentally remove real content (non-comment LaTeX)?
+4. Are there any important compilation warnings or errors?
 
 If everything looks good, say "All changes look correct."
 """
 
 
 def _run_claude(
-    prompt: str, stdin: str = "", verbose: bool = False, timeout: int = 300
+    prompt: str, stdin: str = "", verbose: bool = False, timeout: int = 10*60
 ) -> str | None:
     """Run claude CLI with a prompt. Returns response or None."""
     if not shutil.which("claude"):
@@ -37,7 +39,7 @@ def _run_claude(
 
     try:
         proc = subprocess.run(
-            ["claude", "-p", prompt, "--model", "sonnet"],
+            ["claude", "-p", prompt, "--model", "opus"],
             input=stdin,
             capture_output=True,
             text=True,
@@ -59,19 +61,27 @@ def _run_claude(
 
 
 def verify_changes(
-    todo_commands: list[str],
-    todo_invocations_removed: int,
-    borderline_commands: dict[str, str],
-    files_removed: list[str],
-    comments_stripped: list[str],
-    compile_warnings: list[str],
-    compile_errors: list[str],
+    workdir: str = "",
+    todo_commands: list[str] | None = None,
+    todo_invocations_removed: int = 0,
+    borderline_commands: dict[str, str] | None = None,
+    files_removed: list[str] | None = None,
+    comments_stripped: list[str] | None = None,
+    compile_warnings: list[str] | None = None,
+    compile_errors: list[str] | None = None,
     verbose: bool = False,
 ) -> str | None:
     """Comprehensive Claude verification of all arxivable changes.
 
     Returns analysis string or None.
     """
+    todo_commands = todo_commands or []
+    borderline_commands = borderline_commands or {}
+    files_removed = files_removed or []
+    comments_stripped = comments_stripped or []
+    compile_warnings = compile_warnings or []
+    compile_errors = compile_errors or []
+
     sections = []
 
     # Todo commands
@@ -127,9 +137,12 @@ def verify_changes(
                 + "\n".join(f"  {w}" for w in important[:15])
             )
 
-    if not sections:
+    if not sections and not workdir:
         return None
 
-    changes_description = "\n\n".join(sections)
-    prompt = REVIEW_PROMPT.format(changes_description=changes_description)
+    changes_description = "\n\n".join(sections) if sections else "No metadata summary available."
+    prompt = REVIEW_PROMPT.format(
+        changes_description=changes_description,
+        workdir=workdir,
+    )
     return _run_claude(prompt, verbose=verbose)

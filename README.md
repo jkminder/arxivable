@@ -1,6 +1,7 @@
 # arxivable
 
-Prepare Overleaf LaTeX papers for arXiv submission. One command to strip comments, remove todos, clean unused files, ensure arXiv compatibility, and produce a ready-to-upload zip.
+Prepare Overleaf LaTeX papers for arXiv submission. One command to strip comments, remove todos, clean unused files, ensure arXiv compatibility, and produce a ready-to-upload zip. 
+Optionally, you can enable Claude to review all changes made by the script and verify that nothing important was incorrectly removed.
 
 ## Prerequisites
 

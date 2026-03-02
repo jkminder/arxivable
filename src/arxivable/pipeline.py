@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import subprocess
 import sys
 
 from arxivable.utils import check_dependencies, format_size, is_git_url, step_print
@@ -81,7 +82,8 @@ def _clean_junk(workdir: str, verbose: bool = False) -> int:
         # Remove junk directories
         to_remove = []
         for d in dirs:
-            if d in JUNK_PATTERNS or d.startswith("."):
+            _, dext = os.path.splitext(d)
+            if d in JUNK_PATTERNS or d.startswith(".") or dext == ".app":
                 dpath = os.path.join(root, d)
                 shutil.rmtree(dpath)
                 count += 1
@@ -106,6 +108,30 @@ def _clean_junk(workdir: str, verbose: bool = False) -> int:
                     print(f"  Removed: {os.path.relpath(fpath, workdir)}")
 
     return count
+
+
+def _git_snapshot(workdir: str) -> None:
+    """Initialize a git repo in workdir and commit current state as baseline."""
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "arxivable",
+        "GIT_AUTHOR_EMAIL": "arxivable@local",
+        "GIT_COMMITTER_NAME": "arxivable",
+        "GIT_COMMITTER_EMAIL": "arxivable@local",
+    }
+    subprocess.run(["git", "init"], cwd=workdir, capture_output=True, check=True, env=env)
+    subprocess.run(["git", "add", "-A"], cwd=workdir, capture_output=True, check=True, env=env)
+    subprocess.run(
+        ["git", "commit", "-m", "baseline", "--allow-empty"],
+        cwd=workdir, capture_output=True, check=True, env=env,
+    )
+
+
+def _git_cleanup(workdir: str) -> None:
+    """Remove the temporary .git directory from the workdir."""
+    git_dir = os.path.join(workdir, ".git")
+    if os.path.isdir(git_dir):
+        shutil.rmtree(git_dir)
 
 
 def run_pipeline(
@@ -174,6 +200,14 @@ def run_pipeline(
         junk_count = _clean_junk(workdir, verbose)
         if verbose:
             print(f"  Removed {junk_count} junk files/dirs")
+
+        # Snapshot clean state for diffing (used by claude check)
+        if check_with_claude:
+            try:
+                _git_snapshot(workdir)
+            except subprocess.CalledProcessError:
+                if verbose:
+                    print("  Warning: could not create git snapshot for diff")
 
         # ── Step 4: Detect and remove todos ──
         step_print(4, TOTAL_STEPS, "Processing todo commands...")
@@ -262,6 +296,7 @@ def run_pipeline(
         if check_with_claude:
             print("[*] Verifying changes with Claude...")
             analysis = claude_verify(
+                workdir=workdir,
                 todo_commands=list(todo_info.commands.keys()),
                 todo_invocations_removed=len(todo_info.invocations),
                 borderline_commands={},  # already handled interactively
@@ -271,6 +306,7 @@ def run_pipeline(
                 compile_errors=compile_result.errors,
                 verbose=verbose,
             )
+            _git_cleanup(workdir)
             if analysis:
                 summary["claude_verification"] = analysis
 
