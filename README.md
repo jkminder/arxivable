@@ -48,7 +48,7 @@ arxivable /path/to/project -c                  # use Claude to verify all change
 1. **Checks dependencies** — verifies `pdflatex`, `bibtex`, `git` are installed
 2. **Copies to temp dir** — clones git repos or copies folders, never modifies originals
 3. **Cleans junk files** — removes `.git/`, `.DS_Store`, build artifacts, etc.
-4. **Removes todo infrastructure** — discovers all `todonotes`-based commands via BFS, removes definitions and invocations. Crashes on active (non-disabled) todos unless `--force`. Interactively prompts about borderline color-marker commands (e.g. `\shared`) that may or may not be todos
+4. **Removes todo infrastructure** — discovers all `todonotes`-based commands via BFS, removes definitions and invocations. Crashes on active (non-disabled) todos unless `--force`. Interactively prompts about borderline color-marker commands that may or may not be todos
 5. **Strips comments** — removes `%` comments from body `.tex` files (preserves preamble files where `%` is used for macro line continuation)
 6. **Removes unused files** — detects referenced files via `\includegraphics`, `\input`, `\bibliography`, `\lstinputlisting`, custom macros, etc. Removes everything else
 7. **Applies arXiv fixes** — adds `\pdfoutput=1` (pdflatex only), generates `.bbl` if missing, detects XeLaTeX/LuaLaTeX requirements
