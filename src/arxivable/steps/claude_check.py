@@ -29,7 +29,11 @@ If everything looks good, say "All changes look correct."
 
 
 def _run_claude(
-    prompt: str, stdin: str = "", verbose: bool = False, timeout: int = 10*60
+    prompt: str,
+    stdin: str = "",
+    verbose: bool = False,
+    timeout: int = 10*60,
+    workdir: str = "",
 ) -> str | None:
     """Run claude CLI with a prompt. Returns response or None."""
     if not shutil.which("claude"):
@@ -37,9 +41,13 @@ def _run_claude(
         print("  Install: https://docs.anthropic.com/en/docs/claude-code")
         return None
 
+    cmd = ["claude", "-p", prompt, "--model", "opus"]
+    if workdir:
+        cmd.extend(["--add-dir", workdir])
+
     try:
         proc = subprocess.run(
-            ["claude", "-p", prompt, "--model", "opus"],
+            cmd,
             input=stdin,
             capture_output=True,
             text=True,
@@ -145,4 +153,4 @@ def verify_changes(
         changes_description=changes_description,
         workdir=workdir,
     )
-    return _run_claude(prompt, verbose=verbose)
+    return _run_claude(prompt, verbose=verbose, workdir=workdir)
