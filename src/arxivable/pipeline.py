@@ -11,7 +11,7 @@ import sys
 from arxivable.utils import check_dependencies, format_size, is_git_url, step_print
 
 
-TOTAL_STEPS = 8  # base steps (without optional claude check)
+BASE_STEPS = 8
 
 JUNK_PATTERNS = {
     ".git",
@@ -140,6 +140,7 @@ def run_pipeline(
     main_file: str | None,
     force: bool,
     check_with_claude: bool,
+    pdf_diff: bool,
     keep_temp: bool,
     dry_run: bool,
     verbose: bool,
@@ -166,6 +167,10 @@ def run_pipeline(
     from arxivable.steps.claude_check import verify_changes as claude_verify
     from arxivable.steps.package import clean_build_artifacts, create_zip
 
+    total_steps = BASE_STEPS
+    if pdf_diff:
+        total_steps += 2
+
     # Summary tracking
     summary = {
         "source": os.path.abspath(os.path.expanduser(source)) if not is_git_url(source) else source,
@@ -180,19 +185,32 @@ def run_pipeline(
     }
 
     # ── Step 1: Check dependencies ──
-    step_print(1, TOTAL_STEPS, "Checking dependencies...")
+    step_print(1, total_steps, "Checking dependencies...")
     check_dependencies()
 
+    if pdf_diff:
+        from arxivable.steps.pdf_diff import check_diff_pdf
+
+        if not check_diff_pdf():
+            print("Error: diff-pdf is not installed (required by --diff)")
+            print("  macOS:  brew install diff-pdf")
+            print("  Ubuntu: sudo apt install diff-pdf")
+            sys.exit(1)
+
     # ── Step 2: Prepare working directory ──
-    step_print(2, TOTAL_STEPS, "Preparing working directory...")
+    step_print(2, total_steps, "Preparing working directory...")
     workdir, project_name = prepare_workdir(source, verbose)
 
     if output is None:
         output = os.path.expanduser(f"~/Downloads/{project_name}_arxiv.zip")
 
+    # Track current step number (dynamic based on --diff)
+    step = 2
+
     try:
         # ── Step 3: Auto-detect main .tex & clean junk ──
-        step_print(3, TOTAL_STEPS, "Detecting main file & cleaning junk...")
+        step += 1
+        step_print(step, total_steps, "Detecting main file & cleaning junk...")
         main_tex = _detect_main_tex(workdir, main_file)
         if verbose:
             print(f"  Main file: {main_tex}")
@@ -200,6 +218,37 @@ def run_pipeline(
         junk_count = _clean_junk(workdir, verbose)
         if verbose:
             print(f"  Removed {junk_count} junk files/dirs")
+
+        # ── Optional: Compile reference PDF for diffing ──
+        ref_pdf_path = None
+        if pdf_diff:
+            step += 1
+            step_print(step, total_steps, "Compiling reference PDF...")
+
+            compiler = detect_compiler(workdir, main_tex)
+            bbl_existed = check_bbl_exists(workdir, main_tex)
+            bib_file = check_bib_exists(workdir)
+            ref_needs_bibtex = not bbl_existed and bib_file is not None
+
+            ref_compile = compile_latex(workdir, main_tex, ref_needs_bibtex, verbose)
+            if ref_compile.errors:
+                print("  Warning: reference compilation had errors:")
+                for err in ref_compile.errors[:5]:
+                    print(f"    {err}")
+
+            # Copy reference PDF to temp parent (alongside workdir)
+            main_base = os.path.splitext(main_tex)[0]
+            compiled_pdf = os.path.join(workdir, f"{main_base}.pdf")
+            if os.path.isfile(compiled_pdf):
+                ref_pdf_path = os.path.join(os.path.dirname(workdir), "reference.pdf")
+                shutil.copy2(compiled_pdf, ref_pdf_path)
+                if verbose:
+                    print(f"  Saved reference PDF: {ref_pdf_path}")
+            else:
+                print("  Warning: reference PDF not produced, skipping diff")
+
+            # Reset workdir to pre-compilation state
+            clean_build_artifacts(workdir, main_tex, verbose=False)
 
         # Snapshot clean state for diffing (used by claude check)
         if check_with_claude:
@@ -209,8 +258,9 @@ def run_pipeline(
                 if verbose:
                     print("  Warning: could not create git snapshot for diff")
 
-        # ── Step 4: Detect and remove todos ──
-        step_print(4, TOTAL_STEPS, "Processing todo commands...")
+        # ── Step: Detect and remove todos ──
+        step += 1
+        step_print(step, total_steps, "Processing todo commands...")
         todo_info = discover_todos(workdir, verbose)
         find_todo_invocations(workdir, main_tex, todo_info, verbose)
 
@@ -234,15 +284,17 @@ def run_pipeline(
             if borderline_removed:
                 summary.setdefault("borderline_removed", []).extend(borderline_removed)
 
-        # ── Step 5: Strip comments ──
-        step_print(5, TOTAL_STEPS, "Stripping comments...")
+        # ── Step: Strip comments ──
+        step += 1
+        step_print(step, total_steps, "Stripping comments...")
         modified_files = run_strip_comments(workdir, main_tex, verbose, dry_run)
         summary["comments_stripped"] = modified_files
         if dry_run:
             print(f"  Would strip comments from {len(modified_files)} files")
 
-        # ── Step 6: Remove unused files ──
-        step_print(6, TOTAL_STEPS, "Removing unused files...")
+        # ── Step: Remove unused files ──
+        step += 1
+        step_print(step, total_steps, "Removing unused files...")
         removed = remove_unused_files(workdir, main_tex, verbose, dry_run)
         summary["files_removed"] = removed
         if dry_run:
@@ -257,8 +309,9 @@ def run_pipeline(
             print("\nDry run complete. No changes were applied.")
             return
 
-        # ── Step 7: arXiv compatibility ──
-        step_print(7, TOTAL_STEPS, "Applying arXiv compatibility fixes...")
+        # ── Step: arXiv compatibility ──
+        step += 1
+        step_print(step, total_steps, "Applying arXiv compatibility fixes...")
 
         # Detect compiler first — \pdfoutput=1 only needed for pdflatex
         compiler = detect_compiler(workdir, main_tex)
@@ -281,8 +334,9 @@ def run_pipeline(
         for w in size_warnings:
             print(f"  Warning: {w}")
 
-        # ── Step 8: Compile ──
-        step_print(8, TOTAL_STEPS, f"Compiling ({compiler})...")
+        # ── Step: Compile ──
+        step += 1
+        step_print(step, total_steps, f"Compiling ({compiler})...")
         compile_result = compile_latex(workdir, main_tex, needs_bibtex, verbose)
 
         if compile_result.errors:
@@ -291,6 +345,46 @@ def run_pipeline(
                 print(f"    {err}")
         summary["compile_warnings"] = len(compile_result.warnings)
         summary["compile_errors"] = len(compile_result.errors)
+
+        # ── Optional: Compare PDFs ──
+        if pdf_diff and ref_pdf_path:
+            from arxivable.steps.pdf_diff import run_pdf_diff
+
+            step += 1
+            step_print(step, total_steps, "Comparing PDFs...")
+
+            main_base = os.path.splitext(main_tex)[0]
+            cleaned_pdf_src = os.path.join(workdir, f"{main_base}.pdf")
+
+            if os.path.isfile(cleaned_pdf_src):
+                cleaned_pdf_path = os.path.join(
+                    os.path.dirname(workdir), "cleaned.pdf"
+                )
+                shutil.copy2(cleaned_pdf_src, cleaned_pdf_path)
+
+                # Diff output goes next to the zip
+                diff_output_path = re.sub(r"\.zip$", "_diff.pdf", output)
+                if diff_output_path == output:
+                    diff_output_path = output + "_diff.pdf"
+
+                identical = run_pdf_diff(
+                    ref_pdf_path, cleaned_pdf_path, diff_output_path
+                )
+
+                if identical:
+                    summary["pdf_diff"] = "identical"
+                    # Remove the diff file if PDFs are identical
+                    if os.path.isfile(diff_output_path):
+                        os.remove(diff_output_path)
+                    if verbose:
+                        print("  PDFs are visually identical")
+                else:
+                    summary["pdf_diff"] = diff_output_path
+                    if verbose:
+                        print(f"  Differences found — see {diff_output_path}")
+            else:
+                print("  Warning: cleaned PDF not produced, skipping diff")
+                summary["pdf_diff"] = "skipped"
 
         # Optional: Claude verification of all changes
         if check_with_claude:
@@ -421,6 +515,12 @@ def _print_summary(summary: dict) -> None:
     status = "OK" if summary["compile_errors"] == 0 else "ERRORS"
     warn_str = f" ({summary['compile_warnings']} warnings)" if summary["compile_warnings"] else ""
     print(f"  Compile:   {status}{warn_str}")
+
+    pdf_diff_result = summary.get("pdf_diff")
+    if pdf_diff_result == "identical":
+        print("  PDF diff:  Identical")
+    elif pdf_diff_result and pdf_diff_result not in ("skipped",):
+        print(f"  PDF diff:  Differences found — see {pdf_diff_result}")
 
     if summary.get("claude_verification"):
         print()

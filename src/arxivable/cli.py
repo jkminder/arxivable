@@ -36,6 +36,12 @@ from arxivable.pipeline import run_pipeline
     help="Use Claude Code to verify all changes are correct",
 )
 @click.option(
+    "--diff",
+    "pdf_diff",
+    is_flag=True,
+    help="Compile before & after cleaning and diff PDFs (requires diff-pdf)",
+)
+@click.option(
     "--keep-temp",
     is_flag=True,
     help="Keep temp working directory for debugging",
@@ -53,6 +59,7 @@ def main(
     main_file: str | None,
     force: bool,
     check_with_claude: bool,
+    pdf_diff: bool,
     keep_temp: bool,
     dry_run: bool,
     verbose: bool,
@@ -67,6 +74,7 @@ def main(
         main_file=main_file,
         force=force,
         check_with_claude=check_with_claude,
+        pdf_diff=pdf_diff,
         keep_temp=keep_temp,
         dry_run=dry_run,
         verbose=verbose,
